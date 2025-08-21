@@ -15,3 +15,12 @@ class RegisterUser(BaseModel):
 class RegisterResponse(BaseModel):
     email: EmailStr
     message: str = "Registration successful. Please log in to continue."
+
+class LoginRequest(BaseModel):
+    email: EmailStr 
+    password: str 
+
+class LoginResponse(BaseModel):
+    success: bool
+    message: str
+    data: dict | None = None

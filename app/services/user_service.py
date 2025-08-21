@@ -1,7 +1,7 @@
 from datetime import datetime
-from app.utils.db_utils import users_collection
+from app.utils.db_utils import users_collection,login_attempts_collection
 from app.schemas.user_schema import RegisterUser
-from app.utils.auth_utils import get_user_by_email, hash_password, validate_password_strength
+from app.utils.auth_utils import create_jwt_token, get_user_by_email, hash_password, validate_password_strength, verify_password
 from app.utils.logger import logger
 from datetime import datetime
 
@@ -38,3 +38,48 @@ async def register_user(user: RegisterUser) -> tuple[bool, str]:
     except Exception as e:
         logger.error(f"Error during user registration: {str(e)}")
         return False, "Internal Server Error"
+
+async def login_user(email: str, password: str) -> dict:
+    existing_user = await get_user_by_email(email)
+    
+    if not existing_user:
+        await login_attempts_collection.insert_one({
+            "email": email,
+            "timestamp": datetime.utcnow(),
+            "success": False,
+        })
+        logger.warning(f"Login failed: user not found for email={email}")
+        return {"success": False, "message": "Invalid credentials", "data": None}
+    
+    password_valid = verify_password(password, existing_user["password"])
+    if not password_valid:
+        await login_attempts_collection.insert_one({
+            "user_id": str(existing_user["_id"]),
+            "timestamp": datetime.utcnow(),
+            "success": False,
+        })
+        logger.warning(f"Login failed: invalid password for email={email}")
+        return {"success": False, "message": "Invalid credentials", "data": None}
+    
+    # Successful login
+    token = create_jwt_token(str(existing_user["_id"]), existing_user["role"])
+    
+    await login_attempts_collection.insert_one({
+        "user_id": str(existing_user["_id"]),
+        "timestamp": datetime.utcnow(),
+        "success": True,
+    })
+    logger.info(f"Login successful for user_id={existing_user['_id']} email={email}")
+    
+    return {
+        "success": True,
+        "message": "Login successful",
+        "data": {
+            "token": token,
+            "user": {
+                "id": str(existing_user["_id"]),
+                "email": existing_user["email"],
+                "role": existing_user["role"]
+            }
+        }
+    }
