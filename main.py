@@ -1,4 +1,5 @@
 from app.utils.logger import logger
+from app.routes import user_routes
 from fastapi import FastAPI
 
 app = FastAPI(
@@ -11,3 +12,4 @@ def health_check():
     logger.info("Application started successfully")
     return {"Status": "Healthy"}
 
+app.include_router(user_routes.router, prefix="/users")
