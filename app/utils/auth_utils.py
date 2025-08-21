@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import random
 import re
 import jwt
 from passlib.context import CryptContext
@@ -105,3 +106,33 @@ async def get_user_by_email(email: str) -> dict | None:
     except Exception as e:
         logger.error(f"Error fetching user by email ({email}): {e}")
         return None
+
+OTP_EXPIRE_MINUTES = 10  # OTP validity
+
+async def generate_otp() -> str:
+    otp = str(random.randint(100000, 999999))  # 6-digit OTP
+    logger.info(f"OTP generated: {otp}")
+    return otp
+
+def otp_expiry_time() -> datetime:
+    return datetime.utcnow() + timedelta(minutes=OTP_EXPIRE_MINUTES)
+
+async def send_otp_email(to_email: str, otp: str) -> bool:
+    try:
+        subject = "Your Password Reset OTP"
+        body = f"Your OTP for password reset is: {otp}. It is valid for {OTP_VALIDITY_MINUTES} minutes."
+        msg = MIMEText(body)
+        msg['Subject'] = subject
+        msg['From'] = EMAIL_USER
+        msg['To'] = to_email
+
+        with smtplib.SMTP(EMAIL_HOST, EMAIL_PORT) as server:
+            server.starttls()
+            server.login(EMAIL_USER, EMAIL_PASS)
+            server.send_message(msg)
+
+        logger.info(f"OTP email sent to {to_email}")
+        return True
+    except Exception as e:
+        logger.error(f"Error sending OTP email to {to_email}: {e}")
+        return False

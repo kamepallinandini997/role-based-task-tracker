@@ -1,7 +1,7 @@
-from datetime import datetime
-from app.utils.db_utils import users_collection,login_attempts_collection
+from datetime import datetime, timedelta
+from app.utils.db_utils import users_collection,login_attempts_collection,password_resets_collection
 from app.schemas.user_schema import RegisterUser
-from app.utils.auth_utils import create_jwt_token, get_user_by_email, hash_password, validate_password_strength, verify_password
+from app.utils.auth_utils import create_jwt_token, generate_otp, get_user_by_email, hash_password, otp_expiry_time, validate_password_strength, verify_password
 from app.utils.logger import logger
 from datetime import datetime
 
@@ -48,9 +48,56 @@ async def login_user(email: str, password: str) -> dict:
             "timestamp": datetime.utcnow(),
             "success": False,
         })
-        logger.warning(f"Login failed: user not found for email={email}")
+        logger.warning(f"[LOGIN FAILED] User not found: email={email}")
         return {"success": False, "message": "Invalid credentials", "data": None}
-    
+
+    if existing_user.get("locked_until"):
+        if datetime.utcnow() < existing_user["locked_until"]:
+            logger.warning(
+                f"[ACCOUNT LOCKED] Login attempt on locked account: email={email}, locked_until={existing_user['locked_until']}"
+            )
+            return {
+                "success": False,
+                "message": f"Account locked until {existing_user['locked_until']}. Please reset your password.",
+                "action": "reset_password",
+                "data": None
+            }
+        else:
+            # Clear lock if time passed
+            await users_collection.update_one(
+                {"_id": existing_user["_id"]},
+                {"$set": {"locked_until": None}}
+            )
+            logger.info(f"[LOCK CLEARED] Account unlocked automatically: email={email}")
+
+    # Fetch last 5 login attempts
+    last_attempts = await login_attempts_collection.find(
+        {"user_id": str(existing_user["_id"])}
+    ).sort("timestamp", -1).limit(5).to_list(5)
+
+    consecutive_failures = 0
+    for attempt in last_attempts:
+        if not attempt["success"]:
+            consecutive_failures += 1
+        else:
+            break  # Stop at first success
+
+    if consecutive_failures >= 5:
+        locked_until = datetime.utcnow() + timedelta(hours=2)
+        await users_collection.update_one(
+            {"_id": existing_user["_id"]},
+            {"$set": {"locked_until": locked_until}}
+        )
+        logger.warning(
+            f"[ACCOUNT LOCKED] 5 consecutive failed attempts: email={email}, locked_until={locked_until}"
+        )
+        return {
+            "success": False,
+            "message": "Account locked due to 5 consecutive failed attempts. Please reset your password.",
+            "action": "reset_password",
+            "data": None
+        }
+
     password_valid = verify_password(password, existing_user["password"])
     if not password_valid:
         await login_attempts_collection.insert_one({
@@ -58,7 +105,7 @@ async def login_user(email: str, password: str) -> dict:
             "timestamp": datetime.utcnow(),
             "success": False,
         })
-        logger.warning(f"Login failed: invalid password for email={email}")
+        logger.warning(f"[LOGIN FAILED] Invalid password: email={email}")
         return {"success": False, "message": "Invalid credentials", "data": None}
     
     # Successful login
@@ -69,7 +116,7 @@ async def login_user(email: str, password: str) -> dict:
         "timestamp": datetime.utcnow(),
         "success": True,
     })
-    logger.info(f"Login successful for user_id={existing_user['_id']} email={email}")
+    logger.info(f"[LOGIN SUCCESS] User logged in: user_id={existing_user['_id']}, email={email}")
     
     return {
         "success": True,
@@ -83,3 +130,76 @@ async def login_user(email: str, password: str) -> dict:
             }
         }
     }
+
+
+# Step 1: request password reset (generate OTP)
+async def request_password_reset(email: str) -> dict:
+
+    otp = await generate_otp()
+    expires_at = otp_expiry_time()
+    
+    await password_resets_collection.insert_one({
+        "user_id": email,
+        "otp": otp,
+        "expires_at": expires_at,
+        "created_at": datetime.utcnow()
+    })
+    
+    # TODO: send OTP via email
+    sent = await send_otp_email(email, otp)
+    if not sent:
+        return {"success": False, "message": "Failed to send OTP"}
+    logger.info(f"Password reset OTP sent for email={email}")
+    
+    return {"success": True, "message": "OTP sent to your email"}
+
+# Step 2: validate OTP
+async def validate_password_reset_otp(email: str, otp: str) -> dict:
+    
+    record = await password_resets_collection.find_one({
+        "user_id": email,
+        "otp": otp,
+        "expires_at": {"$gte": datetime.utcnow()}
+    })
+    if not record:
+        logger.warning(f"Invalid or expired OTP ")
+        return {"success": False, "message": "Invalid or expired OTP"}
+    
+    logger.info(f"OTP validated for user : {email}")
+    return {"success": True, "message": "OTP validated"}
+
+# Step 3: change password
+async def change_password(email: str, otp: str, new_password: str) -> dict:
+    user = await get_user_by_email(email)
+    
+    if not user:
+        return {"success": False, "message": "User not found"}
+    
+    # Validate OTP first
+    otp_check = await validate_password_reset_otp(email, otp)
+    if not otp_check["success"]:
+        return otp_check
+    
+    # Validate password strength
+    valid, reason = validate_password_strength(new_password)
+    if not valid:
+        return {"success": False, "message": reason}
+    
+    hashed = hash_password(new_password)
+    if not hashed:
+        return {"success": False, "message": "Error hashing password"}
+    
+    await users_collection.update_one(
+        {"_id": user["_id"]},
+        {"$set": {
+            "password": hashed,
+            "password_changed_at": datetime.utcnow(),
+            "locked_until": None
+        }}
+    )
+    
+    logger.info(f"Password changed successfully for user_id={user['_id']}")
+    
+    return {"success": True, "message": "Password changed successfully"}
+
+

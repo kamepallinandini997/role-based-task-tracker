@@ -6,4 +6,5 @@ db = client[DB_NAME]
 
 users_collection = db["users"]
 login_attempts_collection   = db["login_attempts"]
+password_resets_collection = db["password_resets"]
 tasks_collection = db["tasks"]
