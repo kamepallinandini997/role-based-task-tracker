@@ -1,5 +1,5 @@
 from app.utils.logger import logger
-from app.routes import user_routes,project_routes
+from app.routes import task_routes, user_routes,project_routes
 from fastapi import FastAPI
 
 app = FastAPI(
@@ -14,3 +14,4 @@ def health_check():
 
 app.include_router(user_routes.router, prefix="/users")
 app.include_router(project_routes.router, prefix="/projects")
+app.include_router(task_routes.router,prefix="/tasks")
