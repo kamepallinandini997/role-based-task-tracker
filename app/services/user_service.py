@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from app.utils.db_utils import users_collection,login_attempts_collection,password_resets_collection
 from app.schemas.user_schema import RegisterUser
-from app.utils.auth_utils import create_jwt_token, generate_otp, get_user_by_email, hash_password, otp_expiry_time, validate_password_strength, verify_password
+from app.utils.auth_utils import cleanup_expired_otps, create_jwt_token, generate_otp, get_user_by_email, hash_password, otp_expiry_time, send_otp_email, validate_password_strength, verify_password
 from app.utils.logger import logger
 from datetime import datetime
 
@@ -112,10 +112,15 @@ async def login_user(email: str, password: str) -> dict:
     token = create_jwt_token(str(existing_user["_id"]), existing_user["role"])
     
     await login_attempts_collection.insert_one({
-        "user_id": str(existing_user["_id"]),
-        "timestamp": datetime.utcnow(),
-        "success": True,
-    })
+    "user_id": existing_user["_id"],
+    "email": existing_user["email"],
+    "token": token,
+    "login_time": datetime.utcnow(),
+    "expiry_time": datetime.utcnow() + timedelta(hours=24),
+    "success": True,
+    "expired": False,
+    "logout_time": None
+})
     logger.info(f"[LOGIN SUCCESS] User logged in: user_id={existing_user['_id']}, email={email}")
     
     return {
@@ -134,6 +139,8 @@ async def login_user(email: str, password: str) -> dict:
 
 # Step 1: request password reset (generate OTP)
 async def request_password_reset(email: str) -> dict:
+    #
+    await cleanup_expired_otps()
 
     otp = await generate_otp()
     expires_at = otp_expiry_time()
@@ -145,7 +152,7 @@ async def request_password_reset(email: str) -> dict:
         "created_at": datetime.utcnow()
     })
     
-    # TODO: send OTP via email
+    # send OTP via email
     sent = await send_otp_email(email, otp)
     if not sent:
         return {"success": False, "message": "Failed to send OTP"}
@@ -164,6 +171,11 @@ async def validate_password_reset_otp(email: str, otp: str) -> dict:
     if not record:
         logger.warning(f"Invalid or expired OTP ")
         return {"success": False, "message": "Invalid or expired OTP"}
+    
+    # Delete OTP after successful validation
+    await password_resets_collection.delete_one({"_id": record["_id"]})
+    logger.info(f"[OTP VALIDATED] OTP validated and removed for email={email}")
+
     
     logger.info(f"OTP validated for user : {email}")
     return {"success": True, "message": "OTP validated"}

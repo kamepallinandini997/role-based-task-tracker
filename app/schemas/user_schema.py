@@ -9,8 +9,12 @@ class RegisterUser(BaseModel):
     password : str
     date_of_birth : date
     date_of_joining : Optional[date] = None
+    experience_years: Optional[float] = 0
+    skills: Optional[list[str]] = []  # e.g., ["Python", "React", "C"]
+    tools: Optional[list[str]] = []   # e.g., ["Jira", "Docker", "Git"]
+    technologies: Optional[list[str]] = []  # e.g., ["AWS", "FastAPI", "MongoDB"]
     address : Optional[str] =None
-    role: Literal["manager", "developer", "tester"] = "developer"
+    role: Literal["admin","manager", "developer", "tester"] = "developer"
 
 class RegisterResponse(BaseModel):
     email: EmailStr
@@ -24,3 +28,11 @@ class LoginResponse(BaseModel):
     success: bool
     message: str
     data: dict | None = None
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+class PasswordChangeRequest(BaseModel):
+    email: EmailStr
+    otp: str
+    new_password: str

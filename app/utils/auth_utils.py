@@ -1,11 +1,14 @@
 from datetime import datetime, timedelta
+from email.mime.text import MIMEText
 import random
 import re
+import smtplib
 import jwt
+from fastapi import Header, HTTPException
 from passlib.context import CryptContext
-from app.config import SECRET_KEY, ALGORITHM
+from app.config import EMAIL_HOST, EMAIL_PASS, EMAIL_PORT, EMAIL_USER, SECRET_KEY, ALGORITHM
 from app.utils.logger import logger
-from app.utils.db_utils import users_collection
+from app.utils.db_utils import users_collection,password_resets_collection
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -120,7 +123,7 @@ def otp_expiry_time() -> datetime:
 async def send_otp_email(to_email: str, otp: str) -> bool:
     try:
         subject = "Your Password Reset OTP"
-        body = f"Your OTP for password reset is: {otp}. It is valid for {OTP_VALIDITY_MINUTES} minutes."
+        body = f"Your OTP for password reset is: {otp}. It is valid for {OTP_EXPIRE_MINUTES} minutes."
         msg = MIMEText(body)
         msg['Subject'] = subject
         msg['From'] = EMAIL_USER
@@ -136,3 +139,28 @@ async def send_otp_email(to_email: str, otp: str) -> bool:
     except Exception as e:
         logger.error(f"Error sending OTP email to {to_email}: {e}")
         return False
+    
+
+
+async def cleanup_expired_otps():
+    result = await password_resets_collection.delete_many({
+        "expires_at": {"$lt": datetime.utcnow()}
+    })
+    if result.deleted_count > 0:
+        logger.info(f"[OTP CLEANUP] Deleted {result.deleted_count} expired OTP records")
+
+async def get_current_user(authorization: str = Header(...)):
+    """
+    Extracts JWT token from the Authorization header and returns user data.
+    Raises 401 if token is missing, invalid, or expired.
+    """
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid Authorization header")
+    
+    token = authorization.split(" ")[1]
+    payload = decode_jwt_token(token)
+    
+    if not payload.get("success"):
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    
+    return payload["data"]  # contains user_id and role
