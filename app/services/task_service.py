@@ -1,3 +1,4 @@
+from http.client import HTTPException
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from bson import ObjectId
@@ -12,6 +13,7 @@ from app.schemas import (
     DevStatus,
     TesterStatus
 )
+from app.utils.db_utils import users_collection
 from app.utils.logger import logger  
 
 # --- Helpers ---------------------------------------------------------------
@@ -66,31 +68,53 @@ async def get_task_by_id(task_id: str) -> Optional[Dict[str, Any]]:
 # --- Assign (Admin/Manager) ------------------------------------------------
 
 async def assign_task(task_id: str, developer: Optional[str] = None, tester: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Assign developer and/or tester. Validates that users exist.
+    Auto-sets dev_status/tester_status to 'pending' when assignment happens.
+    Returns updated task.
+    """
     oid = _oid(task_id)
-    current = await task_collection.find_one({"_id": oid})
-    if not current:
+    task = await task_collection.find_one({"_id": oid})
+    if not task:
         logger.error(f"Task not found for assignment: {task_id}")
         raise ValueError("Task not found")
 
     update = {}
+
+    # --- Validate developer ---
     if developer is not None:
+        dev_user = await users_collection.find_one({"email": developer, "role": "developer"})
+        if not dev_user:
+            logger.warning(f"Assignment failed: Developer {developer} not found")
+            raise HTTPException(status_code=400, detail=f"Developer {developer} does not exist")
         update["assigned_to_dev"] = developer
-        if not current.get("dev_status"):
+        if not task.get("dev_status"):
             update["dev_status"] = DevStatus.pending.value
+
+    # --- Validate tester ---
     if tester is not None:
+        tester_user = await users_collection.find_one({"email": tester, "role": "tester"})
+        if not tester_user:
+            logger.warning(f"Assignment failed: Tester {tester} not found")
+            raise HTTPException(status_code=400, detail=f"Tester {tester} does not exist")
         update["assigned_to_tester"] = tester
-        if not current.get("tester_status"):
+        if not task.get("tester_status"):
             update["tester_status"] = TesterStatus.pending.value
 
     if not update:
-        return _serialize_task(current)
+        logger.info(f"No changes for task assignment: {task_id}")
+        return _serialize_task(task)
 
     update["updated_at"] = datetime.utcnow()
-    updated = await task_collection.find_one_and_update(
+    updated_task = await task_collection.find_one_and_update(
         {"_id": oid}, {"$set": update}, return_document=ReturnDocument.AFTER
     )
-    logger.info(f"Task {task_id} assigned → Dev: {developer}, Tester: {tester}")
-    return _serialize_task(updated)
+
+    logger.info(
+        f"Task {task_id} assigned successfully by service. Dev: {developer}, Tester: {tester}"
+    )
+    return _serialize_task(updated_task)
+
 
 # --- Admin full update -----------------------------------------------------
 
