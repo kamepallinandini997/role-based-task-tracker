@@ -1,4 +1,4 @@
-from app.utils.db_utils import projects_collection, tasks_collection
+from app.utils.db_utils import projects_collection, task_collection
 from datetime import datetime
 from bson import ObjectId
 from app.utils.logger import logger
@@ -51,7 +51,7 @@ async def update_project(project_id: str, update_data: dict) -> dict:
 
         project = await projects_collection.find_one({"_id": ObjectId(project_id)})
         project["id"] = str(project["_id"])
-        project["tasks"] = await tasks_collection.find({"project_id": project_id}).to_list(100)
+        project["tasks"] = await task_collection.find({"project_id": project_id}).to_list(100)
 
         project_resp = ProjectResponse(
             id=project["id"],
@@ -79,7 +79,7 @@ async def get_project(project_id: str) -> dict:
             return {"success": False, "message": "Project not found"}
 
         project["id"] = str(project["_id"])
-        project["tasks"] = await tasks_collection.find({"project_id": project_id}).to_list(100)
+        project["tasks"] = await task_collection.find({"project_id": project_id}).to_list(100)
 
         project_resp = ProjectResponse(
             id=project["id"],
@@ -107,7 +107,7 @@ async def list_projects() -> dict:
 
         for p in projects:
             p["id"] = str(p["_id"])
-            tasks = await tasks_collection.find({"project_id": p["id"]}).to_list(100)
+            tasks = await task_collection.find({"project_id": p["id"]}).to_list(100)
             project_resp = ProjectResponse(
                 id=p["id"],
                 name=p["name"],
@@ -133,7 +133,7 @@ async def delete_project(project_id: str) -> dict:
         if result.deleted_count == 0:
             return {"success": False, "message": "Project not found"}
 
-        await tasks_collection.delete_many({"project_id": project_id})
+        await task_collection.delete_many({"project_id": project_id})
         return {"success": True, "message": "Project and its tasks deleted successfully"}
     except Exception as e:
         logger.error(f"Error deleting project: {e}")

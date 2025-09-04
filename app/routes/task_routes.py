@@ -199,3 +199,4 @@ async def append_test_remarks_route(task_id: str, payload: TaskAppendRemarks, cu
         logger.warning(f"Tester {current_user['email']} unauthorized to add remarks on {task_id}")
         raise HTTPException(status_code=403, detail=str(e))
     return updated
+

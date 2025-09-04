@@ -4,7 +4,7 @@ from datetime import datetime
 from bson import ObjectId
 from pymongo import ReturnDocument
 from app.utils.db_utils import task_collection
-from app.schemas import (
+from app.schemas.task_schema import (
     TaskCreate,
     TaskUpdateAdmin,
     TaskUpdateDeveloper,
@@ -248,3 +248,25 @@ async def delete_task(task_id: str) -> bool:
     else:
         logger.error(f"Failed to delete task: {task_id}")
         return False
+    
+async def get_all_tasks(filters: Dict[str, Any], current_user: dict) -> List[Dict[str, Any]]:
+    query = {k: v for k, v in filters.items() if v is not None}
+    cursor = task_collection.find(query)
+    tasks = await cursor.to_list(length=None)
+    return [_serialize_task(t) for t in tasks]
+
+async def get_my_tasks(current_user: dict) -> List[Dict[str, Any]]:
+    role = current_user["role"]
+    email = current_user["email"]
+
+    if role == "developer":
+        query = {"assigned_to_dev": email}
+    elif role == "tester":
+        query = {"assigned_to_tester": email}
+    else:
+        return []
+
+    cursor = task_collection.find(query)
+    tasks = await cursor.to_list(length=None)
+    return [_serialize_task(t) for t in tasks]
+
