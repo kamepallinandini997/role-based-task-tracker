@@ -4,7 +4,7 @@ MONGO_URL =  "mongodb+srv://kamepallinandini:nandini0987@resumestore.08fnipm.mon
 DB_NAME = "task_tracker"
 
 # JWT configuration
-SECRET_KEY = "your_secret_key_here"  # move to config/env in production
+SECRET_KEY = "Secret_key"  # move to config/env in production
 ALGORITHM = "HS256"
 
 import os

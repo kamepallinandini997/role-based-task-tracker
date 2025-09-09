@@ -66,6 +66,7 @@ def validate_password_strength(password: str) -> (bool, str):
 # JWT token creation & decoding
 # -------------------------
 ACCESS_TOKEN_EXPIRE_HOURS=24
+
 def create_jwt_token(user_id: str, role: str) -> str:
     """Create a JWT token for a user."""
     try:
