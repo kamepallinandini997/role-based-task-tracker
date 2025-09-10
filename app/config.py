@@ -1,15 +1,20 @@
+# config.py
 import os
+from dotenv import load_dotenv
+
+# Load variables from .env
+load_dotenv()
+
 # Mongo Configuration
-MONGO_URL =  "mongodb+srv://kamepallinandini:nandini0987@resumestore.08fnipm.mongodb.net/"
-DB_NAME = "task_tracker"
+MONGO_URL = os.getenv("MONGO_URL")
+DB_NAME = os.getenv("DB_NAME")
 
 # JWT configuration
-SECRET_KEY = "Secret_key"  # move to config/env in production
-ALGORITHM = "HS256"
+SECRET_KEY = os.getenv("SECRET_KEY")
+ALGORITHM = os.getenv("ALGORITHM")
 
-import os
-
-EMAIL_HOST = "smtp.office365.com"
-EMAIL_PORT = 587
-EMAIL_USER = "nandini.kamepalli@thezennialpro.com"
-EMAIL_PASS = "outlook_password"
+# Email Configuration
+EMAIL_HOST = os.getenv("EMAIL_HOST")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))  
+EMAIL_USER = os.getenv("EMAIL_USER")
+EMAIL_PASS = os.getenv("EMAIL_PASS")
