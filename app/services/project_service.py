@@ -98,10 +98,14 @@ async def get_project(project_id: str) -> dict:
         logger.error(f"Error fetching project: {e}")
         return {"success": False, "message": "Internal server error"}
 
-
-async def list_projects() -> dict:
+async def list_projects(user) -> dict:
     try:
-        projects_cursor = projects_collection.find()
+        if user.role == "admin":
+            projects_cursor = projects_collection.find()
+        else:
+            # Only projects where the user is a member
+            projects_cursor = projects_collection.find({"members": user.id})
+
         projects = await projects_cursor.to_list(100)
         project_list = []
 
